@@ -1,4 +1,4 @@
-(defproject org.tobereplaced/jetty9-websockets-async "0.1.0"
+(defproject org.tobereplaced/jetty9-websockets-async "0.2.0-SNAPSHOT"
   :description "A WebSocketServlet for Jetty 9 that offloads WebSocket
   communication to core.async channels."
   :url "https://github.com/ToBeReplaced/jetty9-websockets-async"
