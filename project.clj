@@ -9,4 +9,5 @@
                  [org.eclipse.jetty.websocket/websocket-server
                   "9.1.2.v20140210"]]
   :global-vars {*warn-on-reflection* true}
+  :pedantic? :abort
   :profiles {:dev {:dependencies [[com.stuartsierra/component "0.2.1"]]}})
