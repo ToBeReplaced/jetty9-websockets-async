@@ -35,6 +35,15 @@
   "Returns a function that accepts a result from async-preconnect and
   returns a corresponding WebSocketAdapter."
   [connection-channel]
+  ;; TODO: How do we want to handle passing disconnect information
+  ;; through the server?  We could allow the user to pass in a
+  ;; callback for the close event.  Alternatively, we could do handle
+  ;; errors in the go-loop and make sure it only returns when the
+  ;; write-channel has been closed.  This would make it possible to
+  ;; use the result of the go-loop as a closure indicator.  However,
+  ;; it would lose the status-code and reason.  We could have another
+  ;; channel and alt off of it to pass the status code and reason
+  ;; along as the go-loop result?
   (fn [{:keys [read-channel write-channel] :as connection-map}]
     (proxy [WebSocketAdapter] []
       (onWebSocketConnect [^Session session]
