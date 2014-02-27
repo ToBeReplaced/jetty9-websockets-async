@@ -114,15 +114,19 @@
   anything you would like.  One usage could be to use the preconnect
   function to authorize the connection via a session-cookie and return
   the session-cookie as the result."
-  ([connection-channel read-channel-fn write-channel-fn]
-     (servlet connection-channel read-channel-fn write-channel-fn identity))
-  ([connection-channel read-channel-fn write-channel-fn preconnect]
-     (-> connection-channel
-         async-adapter-factory
-         (web-socket-creator (async-preconnect read-channel-fn
-                                               write-channel-fn
-                                               preconnect))
-         web-socket-servlet)))
+
+  (^org.eclipse.jetty.websocket.servlet.WebSocketServlet
+   [connection-channel read-channel-fn write-channel-fn]
+   (servlet connection-channel read-channel-fn write-channel-fn identity))
+
+  (^org.eclipse.jetty.websocket.servlet.WebSocketServlet
+   [connection-channel read-channel-fn write-channel-fn preconnect]
+   (-> connection-channel
+       async-adapter-factory
+       (web-socket-creator (async-preconnect read-channel-fn
+                                             write-channel-fn
+                                             preconnect))
+       web-socket-servlet)))
 
 (defn connect!
   "Connects a WebSocket client to uri.  Returns a channel that will
