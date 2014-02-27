@@ -31,7 +31,7 @@
   (start [this] (.start server) this)
   (stop [this] (.stop server) this))
 
-(defn timeout-alts!!
+(defn- timeout-alts!!
   "Does alts!! on port and a timeout with the set number of
   milliseconds, defaulting to 1000.  Returns the first value from the
   vector returned by alts!!."
@@ -68,7 +68,7 @@
                   :read-channel read-channel
                   :write-channel write-channel}))
 
-(defmacro with-client-server
+(defmacro ^:private with-client-server
   "Runs body in a context with comm bound to a communication-channel,
   client to the connection-map of a WSClient, and Server to a WSServer."
   [comm client server & body]
