@@ -1,7 +1,8 @@
 (ns org.tobereplaced.jetty9-websockets-async
   "A WebSocketServlet for Jetty 9 that offloads WebSocket
   communication to core.async channels."
-  (:require [clojure.core.async :refer [go go-loop close! >!! chan]]
+  (:refer-clojure :exclude [if-some])
+  (:require [clojure.core.async :refer [go go-loop close! >!! chan alt!]]
             [clojure.string :refer [join]])
   (:import [java.net URI]
            [javax.servlet.http HttpServletRequest]
@@ -31,42 +32,69 @@
                              (join ","))))
                     {} (enumeration-seq (.getHeaderNames request)))})
 
+(defmacro ^:private send-or-close!
+  "Sends the message over the WebSocket and recurs if non-nil, closes
+  the other channels and the WebSocket session with status code 1000
+  (CLOSE_NORMAL) otherwise.  Returns the result."
+  [message session remote read-channel result]
+  `(if (nil? ~message)
+     (do
+       (.close ~session)
+       (close! ~read-channel)
+       ~result)
+     (do
+       ;; Errors inside of the sendString call are passed to
+       ;; onWebSocketError so you don't need to capture them here
+       (.sendString ~remote ~message)
+       (recur ~result))))
+
+(defn- write-loop
+  "Returns a channel containing the result of a loop that sends
+  messages over the WebSocket when items are placed on the
+  write-channel.
+
+  If there is an error "
+  [^Session session read-channel write-channel result-channel]
+  (let [remote (.getRemote session)]
+    (go-loop [result nil]
+      (if result
+        (send-or-close! (<! write-channel) session remote
+                        read-channel result)
+        (alt!
+          result-channel ([v] (close! write-channel) (recur v))
+          write-channel ([message]
+                           (send-or-close! message session remote
+                                           read-channel result))
+          :priority true)))))
+
 (defn- async-adapter-factory
   "Returns a function that accepts a result from async-preconnect and
   returns a corresponding WebSocketAdapter."
   [connection-channel]
-  ;; TODO: How do we want to handle passing disconnect information
-  ;; through the server?  We could allow the user to pass in a
-  ;; callback for the close event.  Alternatively, we could do handle
-  ;; errors in the go-loop and make sure it only returns when the
-  ;; write-channel has been closed.  This would make it possible to
-  ;; use the result of the go-loop as a closure indicator.  However,
-  ;; it would lose the status-code and reason.  We could have another
-  ;; channel and alt off of it to pass the status code and reason
-  ;; along as the go-loop result?
   (fn [{:keys [read-channel write-channel] :as connection-map}]
-    (proxy [WebSocketAdapter] []
-      (onWebSocketConnect [^Session session]
-        (let [^WebSocketAdapter this this]
-          (proxy-super onWebSocketConnect session))
-        (>!! connection-channel
-             (assoc connection-map
-               :session session
-               :go-loop (go-loop []
-                          (let [message (<! write-channel)]
-                            (if (nil? message)
-                              (do
-                                (close! read-channel)
-                                (.close session))
-                              (do
-                                (.sendString (.getRemote session) message)
-                                (recur))))))))
-      (onWebSocketText [message] (>!! read-channel message))
-      (onWebSocketClose [status-code reason]
-        (let [^WebSocketAdapter this this]
-          (proxy-super onWebSocketClose status-code reason))
-        (close! read-channel)
-        (close! write-channel)))))
+    (let [ever-connected? (atom false) result-channel (chan 1)]
+      (proxy [WebSocketAdapter] []
+        (onWebSocketConnect [^Session session]
+          (let [^WebSocketAdapter this this]
+            (proxy-super onWebSocketConnect session))
+          (reset! ever-connected? true)
+          (>!! connection-channel
+               (assoc connection-map
+                 :session session
+                 :process-channel (write-loop session read-channel
+                                              write-channel result-channel))))
+        (onWebSocketText [message] (>!! read-channel message))
+        (onWebSocketError [throwable]
+          ;; We must handle the case where this is called before
+          ;; onWebSocketConnect.  This occurs when there is a failed
+          ;; handshake on the client side, for example.
+          (if @ever-connected?
+            (>!! result-channel throwable)
+            (>!! connection-channel throwable)))
+        (onWebSocketClose [status-code reason]
+          (let [^WebSocketAdapter this this]
+            (proxy-super onWebSocketClose status-code reason))
+          (>!! result-channel [status-code reason]))))))
 
 (defn- async-preconnect
   "Returns a function that accepts a ring request map and returns a
@@ -112,18 +140,27 @@
   corresponding ring request map will be passed to the preconnect
   function (default: identity).  If the preconnect function returns a
   truthy value, a connection is established and a connection map is
-  placed on the connection channel.
+  placed on the connection channel.  In the event that the connection
+  attempt fails for whatever reason, an exception is placed on the
+  connection channel instead.
 
-  The connection map contains a :go-loop for the underlying process, a
-  :session for the underlying Session object, a :read-channel,
-  :write-channel, and :preconnect-result.
+  The connection map contains a :process-channel for the underlying
+  process, a :session for the underlying Session object, a
+  :read-channel, :write-channel, and :preconnect-result.
 
   The :read-channel and :write-channel may be used to read and write
   messages over the WebSocket.  The :preconnect-result may contain
   anything you would like.  One usage could be to use the preconnect
   function to authorize the connection via a session-cookie and return
-  the session-cookie as the result."
+  the session-cookie as the result.
 
+  The :process-channel will return nil when the write-channel is
+  closed, a vector containing a status code and message when the other
+  side closes the connection, or an exception if an error occurs.
+
+  The underlying process only handles strings, so you must place
+  strings on the channel.  If you do not, the process will crash
+  silently."
   (^org.eclipse.jetty.websocket.servlet.WebSocketServlet
    [connection-channel read-channel-fn write-channel-fn]
    (servlet connection-channel read-channel-fn write-channel-fn identity))
@@ -139,27 +176,33 @@
 
 (defn connect!
   "Connects a WebSocket client to uri.  Returns a channel that will
-  receive a connection map if the connection is made successfully,
-  closed otherwise.
+  receive a connection map if the connection is made successfully or
+  an exception.
 
-  The connection map contains a :go-loop for the underlying process, a
-  :session for the underlying Session object, a :read-channel,
-  and a :write-channel.
+  The connection map contains a :process-channel for the underlying
+  process, a :session for the underlying Session object, a
+  :read-channel, and a :write-channel.
 
   The :read-channel and :write-channel may be used to read and write
-  messages over the WebSocket."
+  messages over the WebSocket.
+
+  The :process-channel will return nil when the write-channel is
+  closed, a vector containing a status code and message when the other
+  side closes the connection, or an exception if an error occurs.
+
+  The underlying process only handles strings, so you must place
+  strings on the channel.  If you do not, the process will crash
+  silently."
   [^WebSocketClient client ^URI uri read-channel write-channel]
   {:pre [(.isRunning client)]}
-  (let [communication-channel (chan 3)
+  (let [communication-channel (chan 1)
         adapter (async-adapter-factory communication-channel)
         session (.connect client
                           (adapter {:read-channel read-channel
                                     :write-channel write-channel})
                           uri)]
     (go
-      (try
-        @session
-        (<! communication-channel)
-        ;; This is hacky since the consumer really shouldn't close the
-        ;; producer, but this lets us reuse our WebSocketAdapter.
-        (finally (close! communication-channel))))))
+      ;; This exception is placed onto the communication-channel by
+      ;; onWebSocketError
+      (try @session (catch Exception _))
+      (<! communication-channel))))

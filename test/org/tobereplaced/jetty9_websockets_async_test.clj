@@ -6,7 +6,7 @@
              :refer [servlet connect!]])
   (:import [java.net URI]
            [javax.servlet Servlet]
-           [org.eclipse.jetty.websocket.api Session]
+           [org.eclipse.jetty.websocket.api Session UpgradeException]
            [org.eclipse.jetty.server Server]
            [org.eclipse.jetty.servlet ServletContextHandler ServletHolder]
            [org.eclipse.jetty.websocket.client WebSocketClient]))
@@ -35,7 +35,7 @@
   "Does alts!! on port and a timeout with the set number of
   milliseconds, defaulting to 1000.  Returns the first value from the
   vector returned by alts!!."
-  ([port] (timeout-alts!! port 5000))
+  ([port] (timeout-alts!! port 1000))
   ([port ms] (first (alts!! [port (timeout ms)]))))
 
 (defrecord WSClient
@@ -50,7 +50,8 @@
 
 (defn- ws-server
   "Returns a WSServer."
-  [communication-channel read-channel-fn write-channel-fn & more]
+  [communication-channel read-channel-fn write-channel-fn
+   & more]
   (let [holder (ServletHolder. ^Servlet (apply servlet
                                                communication-channel
                                                read-channel-fn
@@ -70,65 +71,87 @@
 
 (defmacro ^:private with-client-server
   "Runs body in a context with comm bound to a communication-channel,
-  client to the connection-map of a WSClient, and Server to a WSServer."
+  client to the connection-map of a WSClient, and server bound to the
+  first result on the communication channel."
   [comm client server & body]
   `(let [ch-fn# #(chan 10) ~comm (ch-fn#)]
-     (with-components [~server (ws-server ~comm ch-fn# ch-fn#)
+     (with-components [server# (ws-server ~comm ch-fn# ch-fn#)
                        client# (ws-client (ch-fn#) (ch-fn#))]
-       (let [~client (:connection-map client#)]
+       (let [~client (:connection-map client#)
+             ~server (timeout-alts!! ~comm)]
          ~@body))))
 
-(def ^:private comm-keys #{:go-loop :session :write-channel :read-channel})
+(def ^:private comm-keys
+  "The keys as part of every running connection map."
+  #{:session :read-channel :write-channel :process-channel})
 
 (deftest connection-test
   (with-client-server comm client server
     (is (every? #(contains? client %) comm-keys)
         "client should have return connection map")
-    (is (let [m (timeout-alts!! comm)]
-          (every? #(contains? m %) (conj comm-keys :preconnect-result)))
+    (is (every? #(contains? server %) (conj comm-keys :preconnect-result))
         "server comm should receive connection map with preconnect-result")
     (is (nil? (timeout-alts!! comm))
         "server comm should not have more than one map on it")))
 
 (deftest client->server-test
-  (with-client-server comm client server
+  (with-client-server _ client server
     (is (= "ping"
-           (let [{:keys [write-channel]} client
-                 {:keys [read-channel]} (timeout-alts!! comm)]
-             (timeout-alts!! [write-channel "ping"])
-             (timeout-alts!! read-channel)))
+           (do
+             (timeout-alts!! [(:write-channel client) "ping"])
+             (timeout-alts!! (:read-channel server))))
         "client should be able to write to server")))
 
 (deftest server->client-test
-  (with-client-server comm client server
+  (with-client-server _ client server
     (is (= "ping"
-           (let [{:keys [write-channel]} (timeout-alts!! comm)
-                 {:keys [read-channel]} client]
-             (timeout-alts!! [write-channel "ping"])
-             (timeout-alts!! read-channel)))
+           (do
+             (timeout-alts!! [(:write-channel server) "ping"])
+             (timeout-alts!! (:read-channel client))))
         "server should be able to write to client")))
 
-(deftest server-close-test
-  (with-client-server comm client server
-    (is (false? (do
-                  (close! (:write-channel (timeout-alts!! comm)))
-                  (Thread/sleep 500)
-                  (.isOpen ^Session (:session client))))
-        "server should be able to close the underlying socket connection")))
+(deftest invalid-write-message-test
+  (with-client-server _ __ server
+    (let [ch (:process-channel server)]
+      (is (= [nil ch]
+             (do
+               (timeout-alts!! [(:write-channel server) :not-a-string])
+               (alts!! [ch (timeout 1000)])))
+          "a non-string write crashes the process silently"))))
 
 (deftest client-close-test
-  (with-client-server comm client server
-    (is (false? (do
-                  (close! (:write-channel client))
-                  (Thread/sleep 500)
-                  (.isOpen ^Session (:session (timeout-alts!! comm)))))
-        "client should be able to close the underlying socket connection")))
+  (with-client-server _ client server
+    (is (= [1000 nil]
+           (do
+             (close! (:write-channel client))
+             (timeout-alts!! (:process-channel server))))
+        "closing the client write channel should close the WebSocket cleanly")))
+
+(deftest server-close-test
+  (with-client-server _ client server
+    (is (= [1000 nil]
+           (do
+             (close! (:write-channel server))
+             (timeout-alts!! (:process-channel client))))
+        "closing the server write channel should close the WebSocket cleanly")))
+
+(deftest running-error-test
+  (is (= (repeat 2 [1009
+                    "Text message size [65537] exceeds maximum size [65536]"])
+         (with-client-server _ client server
+           (do
+             (timeout-alts!! [(:write-channel client)
+                              (apply str (repeat 65537 "x"))])
+             [(timeout-alts!! (:process-channel server))
+              (timeout-alts!! (:process-channel client))])))
+      "violating the WebSocketPolicy should result in an error for both"))
 
 (deftest preconnect-test
   (let [ch-fn #(chan 10) comm (ch-fn)]
-    (with-components [server (ws-server comm ch-fn ch-fn (constantly false))
+    (with-components [server (ws-server comm ch-fn ch-fn
+                                        (constantly false))
                       client (ws-client (ch-fn) (ch-fn))]
       (is (nil? (timeout-alts!! comm))
           "server should see no connection made if preconnect is falsey")
-      (is (nil? (:connection-map client))
-          "client should see no connection made if preconnect is falsey"))))
+      (is (instance? UpgradeException (:connection-map client))
+          "client should see an UpgradeException if preconnect is falsey"))))
