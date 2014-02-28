@@ -11,4 +11,4 @@
   :global-vars {*warn-on-reflection* true}
   :pedantic? :abort
   :profiles {:dev {:dependencies [[com.stuartsierra/component "0.2.1"]]
-                   :jvm-opts ["-Dorg.eclipse.jetty.LEVEL=WARN"]}})
+                   :jvm-opts ["-Dorg.eclipse.jetty.LEVEL=OFF"]}})
