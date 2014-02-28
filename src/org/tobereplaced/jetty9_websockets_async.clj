@@ -11,40 +11,46 @@
            [org.eclipse.jetty.websocket.servlet
             WebSocketCreator WebSocketServletFactory WebSocketServlet]))
 
-(defmacro ^:private send-or-close!
-  "Sends the message over the WebSocket and recurs if non-nil, closes
-  the other channels and the WebSocket session with status code 1000
-  (CLOSE_NORMAL) otherwise.  Returns the result."
-  [message session remote read-channel result]
-  `(if (nil? ~message)
-     (do
-       (.close ~session)
-       (close! ~read-channel)
-       ~result)
-     (do
-       ;; Errors inside of the sendString call are passed to
-       ;; onWebSocketError so you don't need to capture them here
-       (.sendString ~remote ~message)
-       (recur ~result))))
-
 (defn- write-loop
   "Returns a channel containing the result of a loop that sends
   messages over the WebSocket when items are placed on the
   write-channel.
 
-  If there is an error "
+  If an error occurs or the remote endpoint is closed, the exception
+  or status code and reason are given as the result.  When one of
+  these events occurs, it closes the write channel so that no new
+  messages may be attempted.  Values already on the write channel that
+  have yet to be sent to the client will remain on the write channel
+  so that the user can decide what to do with them.
+
+  When anything would stop writing, the read-channel is also closed.
+
+  If the user closes the write-channel, the session will be closed
+  with it.
+
+  Sessions will be closed with status code 1000 (CLOSE_NORMAL)."
   [^Session session read-channel write-channel result-channel]
   (let [remote (.getRemote session)]
-    (go-loop [result nil]
-      (if result
-        (send-or-close! (<! write-channel) session remote
-                        read-channel result)
-        (alt!
-          result-channel ([v] (close! write-channel) (recur v))
-          write-channel ([message]
-                           (send-or-close! message session remote
-                                           read-channel result))
-          :priority true)))))
+    (go-loop []
+      (alt!
+        result-channel
+        ([v]
+           ;; The session is already closed, so just deal with the
+           ;; read and write channels.
+           (close! write-channel)
+           (close! read-channel)
+           v)
+        write-channel
+        ([message]
+           (if (nil? message)
+             (do (.close session) (close! read-channel))
+             (do
+               ;; Errors inside of the sendString call are passed to
+               ;; onWebSocketError so you don't need to capture them
+               ;; here
+               (.sendString remote message)
+               (recur))))
+        :priority true))))
 
 (defn- async-adapter-factory
   "Returns a function that accepts a result from async-preconnect and
