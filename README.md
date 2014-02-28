@@ -6,40 +6,40 @@ to `core.async` channels.
 
 This is heavily inspired by [jetty7-websockets-async].
 
-# Supported Clojure Versions
+## Supported Clojure Versions ##
 
 jetty9-websockets-async is tested on Clojure 1.5.1 only.  It may work
 on other Clojure versions.
 
-# Maturity
+## Maturity ##
 
 This is alpha quality software.
 
-# Installation
+## Installation ##
 
 jetty9-websockets-async is available as a Maven artifact from
 [Clojars]:
 
 ```clojure
-[org.tobereplaced/jetty9-websockets-async "0.1.0"]
+[org.tobereplaced/jetty9-websockets-async "0.2.0"]
 ```
 
 jetty9-websockets-async follows [Semantic Versioning].  Please note
 that this means the public API for this library is not yet considered
 stable.
 
-# Documentation
+## Documentation ##
 
 Please read the [Codox API Documentation], as it contains all of the
 information you would like to know.
 
-# Usage
+## Usage ##
 
 I generally don't believe in wrapping libraries because doing so often
 makes them less flexible.  In this particular case, I can't possibly
 know all of the things you want to do with your web server.
-Consequently, instead of making a "configurator" for
-"ring-jetty-adapter", I have exposed a function you can use to create
+Consequently, instead of making a `configurator` for
+`ring-jetty-adapter`, I have exposed a function you can use to create
 a [WebSocketServlet] or a [WebSocketClient] that offloads
 communication onto `core.async` channels.  What you do with it is up
 to you.
@@ -80,12 +80,26 @@ like below...
 (assert (= "PONG" (<!! client-read-channel)))
 ```
 
-## Support
+## Support ##
 
 Please post any comments, concerns, or issues to the Github issues
 page or find me on `#clojure`.  I welcome any and all feedback.
 
-## License
+## Changelog ##
+
+### v0.2.0 ###
+
+- Add type hint for return of `servlet`.
+- `:go-loop` has been renamed `:process-channel`.
+- Add exception and closing information to the process result.
+- API is backward compatible only if you did not use the `:go-loop`
+  key.
+
+### v0.1.0 ###
+
+- Initial Release
+
+## License ##
 
 Copyright © 2014 ToBeReplaced
 
