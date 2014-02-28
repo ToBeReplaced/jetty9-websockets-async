@@ -11,27 +11,6 @@
            [org.eclipse.jetty.websocket.servlet
             WebSocketCreator WebSocketServletFactory WebSocketServlet]))
 
-(defn- request-map
-  "Returns a ring request map from the PostUpgradedHttpServletRequest
-  object.  We can't use the function from ring-servlet here because
-  some methods like .getContentType are not implemented on the
-  PostUpgradedHttpServletRequest."
-  [^HttpServletRequest request]
-  {:server-port (.getServerPort request)
-   :server-name (.getServerName request)
-   :remote-addr (.getRemoteAddr request)
-   :uri (.getRequestURI request)
-   :query-string (.getQueryString request)
-   :scheme (keyword (.getScheme request))
-   :request-method (keyword (.toLowerCase (.getMethod request)))
-   :headers (reduce (fn [acc ^String name]
-                      (assoc acc
-                        (.toLowerCase name)
-                        (->> (.getHeaders request name)
-                             (enumeration-seq)
-                             (join ","))))
-                    {} (enumeration-seq (.getHeaderNames request)))})
-
 (defmacro ^:private send-or-close!
   "Sends the message over the WebSocket and recurs if non-nil, closes
   the other channels and the WebSocket session with status code 1000
@@ -106,6 +85,27 @@
       {:read-channel (read-channel-fn)
        :write-channel (write-channel-fn)
        :preconnect-result result})))
+
+(defn- request-map
+  "Returns a ring request map from the PostUpgradedHttpServletRequest
+  object.  We can't use the function from ring-servlet here because
+  some methods like .getContentType are not implemented on the
+  PostUpgradedHttpServletRequest."
+  [^HttpServletRequest request]
+  {:server-port (.getServerPort request)
+   :server-name (.getServerName request)
+   :remote-addr (.getRemoteAddr request)
+   :uri (.getRequestURI request)
+   :query-string (.getQueryString request)
+   :scheme (keyword (.getScheme request))
+   :request-method (keyword (.toLowerCase (.getMethod request)))
+   :headers (reduce (fn [acc ^String name]
+                      (assoc acc
+                        (.toLowerCase name)
+                        (->> (.getHeaders request name)
+                             (enumeration-seq)
+                             (join ","))))
+                    {} (enumeration-seq (.getHeaderNames request)))})
 
 (defn- web-socket-creator
   "Returns a WebSocketCreator from a function that creates a
