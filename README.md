@@ -45,40 +45,8 @@ communication onto `core.async` channels.  What you do with it is up
 to you.
 
 If you're looking for example code embedding this servlet in an
-application, the complete [unit tests] may be of interest.
-
-If you absolutely promise not to make your production code look anything
-like below...
-
-```clojure
-(def channel-fn #(chan 45))
-(def comm (channel-fn))
-
-(def server
-  "A running web server accepting websockets."
-  (let [holder (ServletHolder. ^Servlet (servlet comm channel-fn channel-fn))
-        handler (doto (ServletContextHandler.) (.addServlet holder "/*"))]
-    (doto (Server. 8080) (.setHandler handler) .start)))
-
-(def client-read-channel (channel-fn))
-(def client-write-channel (channel-fn))
-
-(def client
-  "A running WebSocketClient."
-  (doto (WebSocketClient.) .start))
-
-(def client-connection
-  "A connection map for the client."
-  (<!! (connect! client
-                 (URI. "ws://localhost:8080/")
-                 client-read-channel client-write-channel)))
-
-(>!! client-write-channel "PING")
-(let [{:keys [read-channel write-channel]} (<!! comm)]
-    (assert (= "PING" (<!! read-channel)))
-    (>!! write-channel "PONG"))
-(assert (= "PONG" (<!! client-read-channel)))
-```
+application, take a look at the example [jetty-chatroom].  Also, the
+complete [unit tests] may be of interest.
 
 ## Support ##
 
@@ -109,6 +77,7 @@ The license can be found at LICENSE in the root of this distribution.
 [WebSocketServlet]: http://download.eclipse.org/jetty/stable-9/apidocs/org/eclipse/jetty/websocket/servlet/WebSocketServlet.html
 [WebSocketClient]: http://download.eclipse.org/jetty/stable-9/apidocs/org/eclipse/jetty/websocket/servlet/client/WebSocketClient.html
 [Codox API Documentation]: http://ToBeReplaced.github.com/jetty9-websockets-async
+[jetty-chatroom]: https://github.com/ToBeReplaced/jetty9-websockets-async/blob/master/examples/jetty_chatroom.clj
 [unit tests]: https://github.com/ToBeReplaced/jetty9-websockets-async/blob/master/test/org/tobereplaced/jetty9_websockets_async_test.clj
 [jetty7-websockets-async]: https://github.com/lynaghk/jetty7-websockets-async
 [Clojars]: http://clojars.org/org.tobereplaced/jetty9-websockets-async
