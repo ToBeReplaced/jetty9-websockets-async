@@ -21,7 +21,7 @@ jetty9-websockets-async is available as a Maven artifact from
 [Clojars]:
 
 ```clojure
-[org.tobereplaced/jetty9-websockets-async "0.2.0"]
+[org.tobereplaced/jetty9-websockets-async "0.2.1"]
 ```
 
 jetty9-websockets-async follows [Semantic Versioning].  Please note
@@ -54,6 +54,10 @@ Please post any comments, concerns, or issues to the Github issues
 page or find me on `#clojure`.  I welcome any and all feedback.
 
 ## Changelog ##
+
+### v0.2.1 ###
+
+- Add `<!` to require statement for newer versions of `core.async`.
 
 ### v0.2.0 ###
 
