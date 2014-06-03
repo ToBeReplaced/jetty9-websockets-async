@@ -5,7 +5,7 @@
   :license {:name "Eclipse Public License"
             :url "http://www.eclipse.org/legal/epl-v10.html"}
   :dependencies [[org.clojure/clojure "1.5.1"]
-                 [org.clojure/core.async "0.1.278.0-76b25b-alpha"]
+                 [org.clojure/core.async "0.1.303.0-886421-alpha"]
                  [org.eclipse.jetty.websocket/websocket-server
                   "9.1.2.v20140210"]]
   :global-vars {*warn-on-reflection* true}

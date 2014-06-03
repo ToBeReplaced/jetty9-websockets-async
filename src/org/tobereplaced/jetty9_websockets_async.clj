@@ -2,12 +2,13 @@
   "A WebSocketServlet for Jetty 9 that offloads WebSocket
   communication to core.async channels."
   (:refer-clojure :exclude [if-some])
-  (:require [clojure.core.async :refer [go go-loop close! >!! chan alt!]]
+  (:require [clojure.core.async :refer [go go-loop close! <! >!! chan alt!]]
             [clojure.string :refer [join]])
   (:import [java.net URI]
            [javax.servlet.http HttpServletRequest]
            [org.eclipse.jetty.websocket.api WebSocketAdapter Session]
            [org.eclipse.jetty.websocket.client WebSocketClient]
+
            [org.eclipse.jetty.websocket.servlet
             WebSocketCreator WebSocketServletFactory WebSocketServlet]))
 
